@@ -19,7 +19,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     )
     repository = SQLiteTaskRepository(selected_path)
     repository.initialize()
-    return create_http_app(TaskService(repository))
+    return create_http_app(TaskService(repository), PROJECT_ROOT / "swagger.yaml")
 
 
 app = create_app()

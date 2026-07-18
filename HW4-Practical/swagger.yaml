@@ -1,0 +1,255 @@
+openapi: 3.1.0
+info:
+  title: Mini Task Manager GraphQL API
+  version: 2.0.0
+  description: |
+    Swagger documentation for the Mini Task Manager GraphQL endpoint.
+    GraphQL operations are sent to the same HTTP endpoint using a JSON body
+    containing `query`, optional `operationName`, and optional `variables`.
+servers:
+  - url: http://127.0.0.1:8000
+    description: Local development server
+tags:
+  - name: System
+    description: Service health operations
+  - name: GraphQL
+    description: Task and tag GraphQL operations
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Check service health
+      operationId: healthCheck
+      responses:
+        "200":
+          description: The service is available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: ok
+  /graphql:
+    post:
+      tags: [GraphQL]
+      summary: Execute a GraphQL operation
+      description: |
+        Executes queries and mutations for tasks and tags. GraphQL validation
+        and application errors are returned in the `errors` array and may use
+        HTTP status 200, as defined by the GraphQL-over-HTTP behavior.
+      operationId: executeGraphQL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GraphQLRequest"
+            examples:
+              createTask:
+                summary: Create a task with tags
+                value:
+                  operationName: CreateTask
+                  query: |
+                    mutation CreateTask($input: CreateTaskInput!) {
+                      createTask(input: $input) {
+                        id
+                        title
+                        description
+                        dueDate
+                        status
+                        tags { id name }
+                      }
+                    }
+                  variables:
+                    input:
+                      title: Complete microservices homework
+                      description: Implement and document the GraphQL API
+                      dueDate: "2026-07-25"
+                      tags: [University, GraphQL]
+              listTasks:
+                summary: List TODO tasks
+                value:
+                  operationName: ListTasks
+                  query: |
+                    query ListTasks($status: TaskStatus) {
+                      tasks(status: $status) {
+                        id
+                        title
+                        description
+                        dueDate
+                        status
+                        tags { id name }
+                      }
+                    }
+                  variables:
+                    status: TODO
+              getTask:
+                summary: Get a task by ID
+                value:
+                  operationName: GetTask
+                  query: |
+                    query GetTask($id: ID!) {
+                      task(id: $id) {
+                        id
+                        title
+                        description
+                        dueDate
+                        status
+                        tags { id name }
+                      }
+                    }
+                  variables:
+                    id: "1"
+              updateTask:
+                summary: Update task information
+                value:
+                  operationName: UpdateTask
+                  query: |
+                    mutation UpdateTask($id: ID!, $input: UpdateTaskInput!) {
+                      updateTask(id: $id, input: $input) {
+                        id
+                        title
+                        description
+                        dueDate
+                        status
+                        tags { id name }
+                      }
+                    }
+                  variables:
+                    id: "1"
+                    input:
+                      description: Final documented implementation
+                      tags: [Backend, GraphQL]
+              changeTaskStatus:
+                summary: Change task status to DONE
+                value:
+                  operationName: ChangeTaskStatus
+                  query: |
+                    mutation ChangeTaskStatus($id: ID!, $status: TaskStatus!) {
+                      changeTaskStatus(id: $id, status: $status) {
+                        id
+                        title
+                        status
+                      }
+                    }
+                  variables:
+                    id: "1"
+                    status: DONE
+              deleteTask:
+                summary: Delete a task
+                value:
+                  operationName: DeleteTask
+                  query: |
+                    mutation DeleteTask($id: ID!) {
+                      deleteTask(id: $id)
+                    }
+                  variables:
+                    id: "1"
+              listTags:
+                summary: List tags and their tasks
+                value:
+                  operationName: ListTags
+                  query: |
+                    query ListTags {
+                      tags {
+                        id
+                        name
+                        tasks { id title status }
+                      }
+                    }
+                  variables: {}
+      responses:
+        "200":
+          description: GraphQL result; inspect `errors` for operation failures.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphQLResponse"
+              examples:
+                success:
+                  summary: Successful task query
+                  value:
+                    data:
+                      task:
+                        id: "1"
+                        title: Complete microservices homework
+                        description: Implement and document the GraphQL API
+                        dueDate: "2026-07-25"
+                        status: TODO
+                        tags:
+                          - id: "1"
+                            name: University
+                applicationError:
+                  summary: GraphQL application error
+                  value:
+                    data: null
+                    errors:
+                      - message: Task with ID 999 was not found.
+                        path: [changeTaskStatus]
+        "400":
+          description: Invalid HTTP request or malformed GraphQL document.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphQLResponse"
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    GraphQLRequest:
+      type: object
+      required: [query]
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: GraphQL query or mutation document.
+        operationName:
+          type: [string, "null"]
+          description: Operation to execute when the document contains several operations.
+        variables:
+          type: [object, "null"]
+          additionalProperties: true
+          description: Values for variables declared by the GraphQL operation.
+    GraphQLResponse:
+      type: object
+      properties:
+        data:
+          type: [object, "null"]
+          additionalProperties: true
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphQLError"
+      anyOf:
+        - required: [data]
+        - required: [errors]
+    GraphQLError:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        locations:
+          type: array
+          items:
+            type: object
+            required: [line, column]
+            properties:
+              line:
+                type: integer
+              column:
+                type: integer
+        path:
+          type: array
+          items: {}
+        extensions:
+          type: object
+          additionalProperties: true
+
