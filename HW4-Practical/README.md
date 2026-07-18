@@ -90,6 +90,25 @@ OpenAPI YAML: http://127.0.0.1:8000/swagger.yaml
 
 مسیر `http://127.0.0.1:8000/health` نیز سلامت سرویس را بررسی می‌کند. فایل دیتابیس به‌صورت پیش‌فرض با نام `task_manager.db` ساخته می‌شود. مسیر آن را می‌توان با متغیر محیطی `TASK_MANAGER_DB_PATH` تغییر داد.
 
+## اجرای سریع با Makefile
+
+در صورت نصب بودن GNU Make، عملیات متداول پروژه با فایل [Makefile](./Makefile) قابل اجرا هستند:
+
+```powershell
+make install           # نصب وابستگی‌های اجرا
+make install-dev       # نصب وابستگی‌های اجرا و تست
+make run               # اجرای API
+make test              # اجرای تمام تست‌ها
+make test-api          # فقط تست‌های GraphQL
+make test-swagger      # فقط تست‌های Swagger
+make validate-swagger  # اعتبارسنجی swagger.yaml
+make schema            # نمایش SDL مربوط به GraphQL
+make clean             # حذف Cacheها و دیتابیس محلی
+make clean-all         # پاک‌سازی کامل همراه محیط مجازی
+```
+
+Makefile سیستم‌عامل را تشخیص می‌دهد و در Windows از `.venv/Scripts/python.exe` و در Linux یا macOS از `.venv/bin/python` استفاده می‌کند. اجرای `make help` نیز فهرست فرمان‌ها را نمایش می‌دهد.
+
 ## نمونه عملیات GraphQL
 
 ایجاد کار:
