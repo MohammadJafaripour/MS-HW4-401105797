@@ -1,28 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Iterable
+
+from app.domain.entities import Tag, Task, TaskStatus
 
 
-@dataclass(frozen=True)
-class TagRecord:
-    id: int
-    name: str
-
-
-@dataclass(frozen=True)
-class TaskRecord:
-    id: int
-    title: str
-    description: str | None
-    due_date: str | None
-    status: str
-    tags: tuple[TagRecord, ...]
-
-
-class TaskRepository:
+class SQLiteTaskRepository:
     def __init__(self, database_path: str | Path) -> None:
         self.database_path = Path(database_path)
 
@@ -68,23 +53,9 @@ class TaskRepository:
             )
 
     @staticmethod
-    def _normalize_tags(tag_names: Iterable[str]) -> list[str]:
-        result: list[str] = []
-        seen: set[str] = set()
-        for raw_name in tag_names:
-            name = raw_name.strip()
-            if not name:
-                raise ValueError("Tag names cannot be empty.")
-            key = name.casefold()
-            if key not in seen:
-                seen.add(key)
-                result.append(name)
-        return result
-
-    @staticmethod
     def _tags_for_task(
         connection: sqlite3.Connection, task_id: int
-    ) -> tuple[TagRecord, ...]:
+    ) -> tuple[Tag, ...]:
         rows = connection.execute(
             """
             SELECT tags.id, tags.name
@@ -95,27 +66,27 @@ class TaskRepository:
             """,
             (task_id,),
         ).fetchall()
-        return tuple(TagRecord(id=row["id"], name=row["name"]) for row in rows)
+        return tuple(Tag(id=row["id"], name=row["name"]) for row in rows)
 
     @classmethod
     def _task_from_row(
         cls, connection: sqlite3.Connection, row: sqlite3.Row
-    ) -> TaskRecord:
-        return TaskRecord(
+    ) -> Task:
+        return Task(
             id=row["id"],
             title=row["title"],
             description=row["description"],
-            due_date=row["due_date"],
-            status=row["status"],
+            due_date=date.fromisoformat(row["due_date"]) if row["due_date"] else None,
+            status=TaskStatus(row["status"]),
             tags=cls._tags_for_task(connection, row["id"]),
         )
 
     @staticmethod
     def _replace_tags(
-        connection: sqlite3.Connection, task_id: int, tag_names: Iterable[str]
+        connection: sqlite3.Connection, task_id: int, tag_names: tuple[str, ...]
     ) -> None:
         connection.execute("DELETE FROM task_tags WHERE task_id = ?", (task_id,))
-        for name in TaskRepository._normalize_tags(tag_names):
+        for name in tag_names:
             connection.execute("INSERT OR IGNORE INTO tags(name) VALUES (?)", (name,))
             tag_row = connection.execute(
                 "SELECT id FROM tags WHERE name = ? COLLATE NOCASE", (name,)
@@ -125,7 +96,7 @@ class TaskRepository:
                 (task_id, tag_row["id"]),
             )
 
-    def get_task(self, task_id: int) -> TaskRecord | None:
+    def get_task(self, task_id: int) -> Task | None:
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT id, title, description, due_date, status FROM tasks WHERE id = ?",
@@ -134,8 +105,8 @@ class TaskRepository:
             return self._task_from_row(connection, row) if row else None
 
     def list_tasks(
-        self, status: str | None = None, tag_id: int | None = None
-    ) -> list[TaskRecord]:
+        self, status: TaskStatus | None = None, tag_id: int | None = None
+    ) -> list[Task]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -146,42 +117,46 @@ class TaskRepository:
                   AND (? IS NULL OR tt.tag_id = ?)
                 ORDER BY t.id
                 """,
-                (status, status, tag_id, tag_id),
+                (
+                    status.value if status else None,
+                    status.value if status else None,
+                    tag_id,
+                    tag_id,
+                ),
             ).fetchall()
             return [self._task_from_row(connection, row) for row in rows]
 
-    def list_tags(self) -> list[TagRecord]:
+    def list_tags(self) -> list[Tag]:
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT id, name FROM tags ORDER BY name COLLATE NOCASE"
             ).fetchall()
-            return [TagRecord(id=row["id"], name=row["name"]) for row in rows]
+            return [Tag(id=row["id"], name=row["name"]) for row in rows]
 
-    def get_tag(self, tag_id: int) -> TagRecord | None:
+    def get_tag(self, tag_id: int) -> Tag | None:
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT id, name FROM tags WHERE id = ?", (tag_id,)
             ).fetchone()
-            return TagRecord(id=row["id"], name=row["name"]) if row else None
+            return Tag(id=row["id"], name=row["name"]) if row else None
 
     def create_task(
         self,
         title: str,
         description: str | None,
-        due_date: str | None,
-        tag_names: Iterable[str],
-    ) -> TaskRecord:
-        normalized_tags = self._normalize_tags(tag_names)
+        due_date: date | None,
+        tag_names: tuple[str, ...],
+    ) -> Task:
         with self._connect() as connection:
             cursor = connection.execute(
                 """
                 INSERT INTO tasks(title, description, due_date, status)
                 VALUES (?, ?, ?, 'TODO')
                 """,
-                (title, description, due_date),
+                (title, description, due_date.isoformat() if due_date else None),
             )
             task_id = cursor.lastrowid
-            self._replace_tags(connection, task_id, normalized_tags)
+            self._replace_tags(connection, task_id, tag_names)
         task = self.get_task(task_id)
         assert task is not None
         return task
@@ -191,10 +166,9 @@ class TaskRepository:
         task_id: int,
         title: str,
         description: str | None,
-        due_date: str | None,
-        tag_names: Iterable[str],
-    ) -> TaskRecord | None:
-        normalized_tags = self._normalize_tags(tag_names)
+        due_date: date | None,
+        tag_names: tuple[str, ...],
+    ) -> Task | None:
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -203,14 +177,19 @@ class TaskRepository:
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
-                (title, description, due_date, task_id),
+                (
+                    title,
+                    description,
+                    due_date.isoformat() if due_date else None,
+                    task_id,
+                ),
             )
             if cursor.rowcount == 0:
                 return None
-            self._replace_tags(connection, task_id, normalized_tags)
+            self._replace_tags(connection, task_id, tag_names)
         return self.get_task(task_id)
 
-    def change_status(self, task_id: int, status: str) -> TaskRecord | None:
+    def change_status(self, task_id: int, status: TaskStatus) -> Task | None:
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -218,7 +197,7 @@ class TaskRepository:
                 SET status = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
-                (status, task_id),
+                (status.value, task_id),
             )
             if cursor.rowcount == 0:
                 return None

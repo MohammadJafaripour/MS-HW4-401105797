@@ -1,6 +1,6 @@
 # سیستم مدیریت کارهای روزانه با GraphQL
 
-این پروژه یک Mini Task Manager است که با Python، کتابخانه Strawberry، فریم‌ورک FastAPI و پایگاه داده SQLite پیاده‌سازی شده است. داده‌ها برخلاف یک ساختار درون‌حافظه‌ای پس از توقف برنامه نیز باقی می‌مانند.
+این پروژه یک Mini Task Manager مبتنی بر معماری کلین است که با Python، کتابخانه Strawberry، فریم‌ورک FastAPI و پایگاه داده SQLite پیاده‌سازی شده است. داده‌ها برخلاف یک ساختار درون‌حافظه‌ای پس از توقف برنامه نیز باقی می‌مانند.
 
 ## قابلیت‌ها
 
@@ -12,6 +12,44 @@
 - دریافت فهرست برچسب‌ها یا یک برچسب با شناسه و پیمایش کارهای هر برچسب
 - اعتبارسنجی عنوان، شناسه و نام برچسب
 - ذخیره پایدار داده‌ها در SQLite و حذف خودکار روابط یک کار هنگام حذف آن
+
+## معماری کلین
+
+وابستگی کد همیشه به سمت لایه‌های داخلی است. Domain هیچ اطلاعی از GraphQL، FastAPI یا SQLite ندارد و Application فقط با قرارداد انتزاعی `TaskRepository` کار می‌کند.
+
+```mermaid
+flowchart LR
+    G[GraphQL / FastAPI<br/>Presentation] --> A[Use Cases<br/>Application]
+    S[SQLite Repository<br/>Infrastructure] --> A
+    A --> D[Entities and Rules<br/>Domain]
+    M[main.py<br/>Composition Root] --> G
+    M --> S
+```
+
+ساختار پوشه‌ها:
+
+```text
+app/
+├── domain/
+│   ├── entities.py          # Task، Tag، Status و قواعد دامنه
+│   └── exceptions.py        # خطاهای مستقل از فریم‌ورک
+├── application/
+│   ├── commands.py          # ورودی Use Caseها
+│   ├── ports.py             # قرارداد TaskRepository
+│   └── services.py          # Use Caseهای سیستم
+├── infrastructure/
+│   └── sqlite_repository.py # پیاده‌سازی قرارداد با SQLite
+├── presentation/
+│   ├── graphql/schema.py    # Typeها، Queryها و Mutationهای GraphQL
+│   └── http.py              # آداپتور FastAPI
+└── main.py                  # ساخت و اتصال وابستگی‌ها
+```
+
+- **Domain:** موجودیت‌ها، Enum وضعیت و قواعد اعتبارسنجی عنوان، توضیحات و برچسب‌ها را نگهداری می‌کند.
+- **Application:** سناریوهای کاربردی ایجاد، ویرایش، حذف، جست‌وجو و تغییر وضعیت را اجرا می‌کند و به Port وابسته است.
+- **Infrastructure:** جزئیات SQL، اتصال SQLite و تبدیل Rowها به موجودیت دامنه را بر عهده دارد.
+- **Presentation:** ورودی و خروجی GraphQL را به Command و Entity تبدیل می‌کند و خطاهای دامنه را به خطای GraphQL نگاشت می‌دهد.
+- **Composition Root:** در `main.py` نمونه SQLite Repository را به `TaskService` تزریق کرده و برنامه HTTP را می‌سازد.
 
 ## مدل داده
 
@@ -137,4 +175,4 @@ python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-تست‌ها چرخه کامل ایجاد، دریافت، فیلتر، ویرایش، تغییر وضعیت و حذف را به همراه مدیریت رابطه برچسب‌ها و خطاهای اعتبارسنجی بررسی می‌کنند.
+تست‌ها چرخه کامل ایجاد، دریافت، فیلتر، ویرایش، تغییر وضعیت و حذف را به همراه مدیریت رابطه برچسب‌ها و خطاهای اعتبارسنجی بررسی می‌کنند. علاوه بر آن، تست مرزهای معماری اجازه نمی‌دهد لایه‌های Domain و Application به فریم‌ورک‌ها، SQLite یا لایه‌های بیرونی وابسته شوند و Use Caseها نیز با Repository ساختگی به‌صورت مستقل تست می‌شوند.
